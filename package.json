@@ -1,0 +1,37 @@
+{
+  "name": "pms-backend",
+  "version": "1.0.0",
+  "description": "Project Management System",
+  "license": "ISC",
+  "author": "Rupesh Rai",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch src/app.ts",
+    "build": "tsc",
+    "start": "node dist/app.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "pg": "^8.23.0",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^1.1.1",
+    "uuid": "^14.0.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.4.1",
+    "@types/pg": "^8.23.1",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.69.0",
+    "@typescript-eslint/parser": "^8.69.0",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "prettier": "^3.9.6",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.13",
+    "typescript": "~5.7.3",
+    "typescript-eslint": "^8.69.0"
+  }
+}
