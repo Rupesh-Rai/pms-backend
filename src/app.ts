@@ -1,16 +1,24 @@
-import express from 'express';
+import { ExpressServer } from '@/express_server';
+import { DatabaseUtil } from '@/utils/db';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+const server = new ExpressServer();
 
-app.use(express.json());
+//connect the database
+new DatabaseUtil();
 
-app.get('/health', (_req, res) => {
-  res.json({ status: 'OK', message: 'Server is healthy' });
+// Handle unexpected runtime errors gracefully
+process.on('uncaughtException', (error: Error) => {
+  console.error(`Uncaught exception in process ${process.pid}:`, error);
+  server.closeServer();
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+// Handle termination signals (e.g., Ctrl+C or kill commands)
+process.on('SIGINT', () => {
+  console.log('Received SIGINT signal. Shutting down...');
+  server.closeServer();
 });
 
-export default app;
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM signal. Shutting down...');
+  server.closeServer();
+});
