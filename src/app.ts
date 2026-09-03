@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { ExpressServer } from '@/express_server';
 import { DatabaseUtil } from '@/utils/db';
 
