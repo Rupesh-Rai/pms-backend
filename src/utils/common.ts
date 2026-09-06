@@ -45,7 +45,7 @@ export const Rights = {
 
 /**
  * Encrypts a string using bcrypt hashing.
- * 
+ *
  * @param {string} s - The string to be encrypted.
  * @returns {Promise<string>} - The encrypted string.
  */
@@ -56,7 +56,7 @@ export const encryptString = async (s: string): Promise<string> => {
 
 /**
  * Compares a plain string with a bcrypt hash to determine if they match.
- * 
+ *
  * @param {string} s - The plain string to be compared.
  * @param {string} hash - The bcrypt hash to compare against.
  * @returns {Promise<boolean>} - A promise that resolves to true if the comparison is successful, otherwise false.
@@ -66,6 +66,31 @@ export const bcryptCompare = async (
   hash: string
 ): Promise<boolean> => {
   return await bcrypt.compare(s, hash);
+};
+
+/**
+ * Checks if a user's rights string contains the required permission.
+ *
+ * @param {string | undefined} userRights - Comma-separated permissions string assigned to the user.
+ * @param {string} requiredPermission - The permission key to check against.
+ * @returns {boolean} True if authorized, otherwise false.
+ */
+export const hasPermission = (
+  userRights: string[] | string | undefined,
+  requiredPermission: string
+): boolean => {
+  if (!userRights) {
+    return false;
+  }
+
+  // Handle array format (e.g., ['add_role', 'edit_role'])
+  if (Array.isArray(userRights)) {
+    return userRights.includes(requiredPermission);
+  }
+
+  // Handle CSV string format (e.g., 'add_role,edit_role')
+  const rightsArray = userRights.split(',').map((right) => right.trim());
+  return rightsArray.includes(requiredPermission);
 };
 
 export const SERVER_CONST = {
