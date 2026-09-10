@@ -16,6 +16,14 @@ export interface IServerConfig {
     email: string;
     password: string;
   };
+  email_config: {
+    host: string;
+    port: number;
+    from: string;
+    user: string;
+    password: string;
+  };
+  front_app_url: string;
 }
 
 export const config: IServerConfig = {
@@ -32,4 +40,12 @@ export const config: IServerConfig = {
     email: process.env.DEFAULT_USER_EMAIL || 'admin@admin.com',
     password: process.env.DEFAULT_USER_PASSWORD || 'Admin@123',
   },
+  email_config: {
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: Number(process.env.EMAIL_PORT) || 587,
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
+    user: process.env.EMAIL_USER || '',
+    password: process.env.EMAIL_PASSWORD || '',
+  },
+  front_app_url: process.env.FRONT_APP_URL || 'http://localhost:3000',
 };

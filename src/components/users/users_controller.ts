@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { BaseController } from '@/utils/base_controller';
 import { UsersService } from '@/components/users/users_service';
-import { RolesUtil } from '@/components/roles/roles_routes';
+import { RolesUtil } from '@/components/roles/roles_util';
 import {
   encryptString,
   bcryptCompare,
@@ -10,6 +10,9 @@ import {
   Rights,
   SERVER_CONST,
 } from '@/utils/common';
+import { config } from '@/utils/config';
+import { sendEmail } from '@/utils/email_util';
+import { UsersUtil } from './users_util';
 
 export class UsersController extends BaseController {
   /**
@@ -361,26 +364,236 @@ export class UsersController extends BaseController {
       });
     }
   };
-}
 
-export class UsersUtil {
-  public static async getUserFromUsername(username: string) {
+  /**
+   * Change password handler for authenticated users.
+   */
+  public changePassword = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    const { oldPassword, newPassword } = req.body;
+    const userId = req.params.id as string;
+
+    console.log(req.body);
+
+    console.log(
+      `changePassword called for userId: ${userId}, oldPassword: ${oldPassword}, newPassword: ${newPassword}`
+    );
+
     try {
-      if (username) {
-        const service = await UsersService.createInstance();
-        // Queries database for the given username
-        const result = await service.findAll({
-          username: username.toLowerCase(),
+      const service = await UsersService.createInstance();
+
+      // 1. Fetch target user by ID using findByIds
+      const findUserResult = await service.findByIds([userId]);
+      const user =
+        findUserResult.data && findUserResult.data.length > 0
+          ? findUserResult.data[0]
+          : null;
+
+      if (!user) {
+        res.status(404).json({
+          statusCode: 404,
+          status: 'error',
+          message: 'User Not Found',
         });
-        if (result.data && result.data.length > 0) {
-          return result.data[0];
-        }
+        return;
       }
+
+      // 2. Ensure users can only modify their own password
+      if (user.username?.toLowerCase() !== req.user?.username?.toLowerCase()) {
+        res.status(400).json({
+          statusCode: 400,
+          status: 'error',
+          message: 'User can change only own password',
+        });
+        return;
+      }
+
+      // 3. Verify old password match
+      const isOldPasswordValid = await bcryptCompare(
+        oldPassword,
+        user.password
+      );
+
+      if (!isOldPasswordValid) {
+        res.status(400).json({
+          statusCode: 400,
+          status: 'error',
+          message: 'oldPassword is not matched',
+        });
+        return;
+      }
+
+      // 4. Encrypt new password and update record
+      const hashedNewPassword = await encryptString(newPassword);
+
+      const updateResult = await service.update(userId, {
+        password: hashedNewPassword,
+        updated_at: new Date(),
+      });
+
+      if (updateResult.statusCode === 200) {
+        res.status(200).json({
+          statusCode: 200,
+          status: 'success',
+          message: 'Password is updated successfully',
+        });
+        return;
+      }
+
+      res.status(updateResult.statusCode).json(updateResult);
     } catch (error: any) {
       console.error(
-        `Error in UsersUtil.getUserFromUsername: ${error?.message || error}`
+        `Error in UsersController.changePassword: ${error?.message || error}`
       );
+      res.status(500).json({
+        statusCode: 500,
+        status: 'error',
+        message: 'Internal server error',
+      });
     }
-    return null;
-  }
+  };
+
+  /**
+   * Handles password recovery link generation and email dispatch.
+   */
+  public forgotPassword = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    const { email } = req.body;
+
+    try {
+      // 1. Fetch user by email
+      const user = await UsersUtil.getUserByEmail(email?.toLowerCase());
+
+      if (!user) {
+        res.status(404).json({
+          statusCode: 404,
+          status: 'error',
+          message: 'User Not Found',
+        });
+        return;
+      }
+
+      // 2. Generate a signed reset JWT valid for 1 hour
+      const resetToken = jwt.sign(
+        { user_id: user.user_id, email: user.email },
+        SERVER_CONST.JWTSECRET,
+        { expiresIn: '1h' }
+      );
+
+      // 3. Construct recovery link
+      const resetLink = `${config.front_app_url}/reset-password?token=${resetToken}`;
+
+      const emailHtml = `
+        <p>Hello ${user.username},</p>
+        <p>We received a request to reset your password. If you didn't initiate this request, please ignore this email.</p>
+        <p>To reset your password, please click the link below:</p>
+        <p><a href="${resetLink}" style="background-color: #007bff; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 5px; display: inline-block;">Reset Password</a></p>
+        <p>If the link doesn't work, copy and paste the following URL into your browser:</p>
+        <p>${resetLink}</p>
+        <p>This link will expire in 1 hour for security reasons.</p>
+        <p>Best regards,<br>PMS Team</p>
+      `;
+
+      // 4. Send email via email utility
+      const emailStatus = await sendEmail({
+        to: user.email,
+        subject: 'Password Reset Request',
+        html: emailHtml,
+      });
+
+      if (emailStatus) {
+        res.status(200).json({
+          statusCode: 200,
+          status: 'success',
+          message: 'Reset link has been sent to your email address',
+        });
+        return;
+      }
+
+      res.status(500).json({
+        statusCode: 500,
+        status: 'error',
+        message: 'Failed to send reset email. Please try again later.',
+      });
+    } catch (error: any) {
+      console.error(
+        `Error in UsersController.forgotPassword: ${error?.message || error}`
+      );
+      res.status(500).json({
+        statusCode: 500,
+        status: 'error',
+        message: 'Internal server error',
+      });
+    }
+  };
+
+  /**
+   * Handles setting a new password using a valid password reset token (passed in Authorization header).
+   */
+  public resetPassword = async (req: Request, res: Response): Promise<void> => {
+    const { newPassword } = req.body;
+    const userId = req.user?.user_id;
+
+    if (!userId) {
+      res.status(401).json({
+        statusCode: 401,
+        status: 'error',
+        message: 'Invalid or missing authentication token',
+      });
+      return;
+    }
+
+    try {
+      const service = await UsersService.createInstance();
+
+      // 1. Verify user exists
+      const findUserResult = await service.findByIds([userId]);
+      const user =
+        findUserResult.data && findUserResult.data.length > 0
+          ? findUserResult.data[0]
+          : null;
+
+      if (!user) {
+        res.status(404).json({
+          statusCode: 404,
+          status: 'error',
+          message: 'User Not Found',
+        });
+        return;
+      }
+
+      // 2. Encrypt new password
+      const hashedNewPassword = await encryptString(newPassword);
+
+      // 3. Update database record
+      const updateResult = await service.update(userId, {
+        password: hashedNewPassword,
+        updated_at: new Date(),
+      });
+
+      if (updateResult.statusCode === 200) {
+        res.status(200).json({
+          statusCode: 200,
+          status: 'success',
+          message: 'Password reset successfully',
+        });
+        return;
+      }
+
+      res.status(updateResult.statusCode).json(updateResult);
+    } catch (error: any) {
+      console.error(
+        `Error in UsersController.resetPassword: ${error?.message || error}`
+      );
+      res.status(500).json({
+        statusCode: 500,
+        status: 'error',
+        message: 'Internal server error',
+      });
+    }
+  };
 }
