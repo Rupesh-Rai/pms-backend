@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { SERVER_CONST } from './common';
-import { UsersUtil } from '@/components/users/users_util';
+import { UsersUtil } from '@/components/users/users_utils';
 import { RolesUtil } from '@/components/roles/roles_util';
 
 export const authorize = async (

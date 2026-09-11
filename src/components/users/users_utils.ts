@@ -38,4 +38,25 @@ export class UsersUtil {
     }
     return null;
   }
+
+  /**
+   * Verifies whether all provided user_ids exist in the database.
+   * @param {string[]} user_ids - Array of UUIDs to validate
+   * @returns {Promise<boolean>} True if all user IDs exist, false otherwise
+   */
+  public static async checkValidUserIds(user_ids: string[]): Promise<boolean> {
+    try {
+      if (!user_ids || user_ids.length === 0) return false;
+
+      const userService = await UsersService.createInstance();
+      const users = await userService.findByIds(user_ids);
+
+      return users?.data?.length === user_ids.length;
+    } catch (error: any) {
+      console.error(
+        `Error in UsersUtil.checkValidUserIds: ${error?.message || error}`
+      );
+      return false;
+    }
+  }
 }

@@ -12,7 +12,7 @@ import {
 } from '@/utils/common';
 import { config } from '@/utils/config';
 import { sendEmail } from '@/utils/email_util';
-import { UsersUtil } from './users_util';
+import { UsersUtil } from './users_utils';
 
 export class UsersController extends BaseController {
   /**

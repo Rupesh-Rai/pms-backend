@@ -1,4 +1,5 @@
 import * as bcrypt from 'bcrypt';
+import moment from 'moment';
 
 export const Rights = {
   ROLES: {
@@ -91,6 +92,19 @@ export const hasPermission = (
   // Handle CSV string format (e.g., 'add_role,edit_role')
   const rightsArray = userRights.split(',').map((right) => right.trim());
   return rightsArray.includes(requiredPermission);
+};
+
+/**
+ * Validates whether a given string is a valid date formatted strictly as 'YYYY-MM-DD HH:mm:ss'.
+ * @param {string | null | undefined} value - The date string input to validate.
+ * @returns {boolean} True if the date format and values are valid, false otherwise.
+ */
+export const checkValidDate = (value: string | null | undefined): boolean => {
+  if (!value || typeof value !== 'string') {
+    return false;
+  }
+
+  return moment(value.trim(), 'YYYY-MM-DD HH:mm:ss', true).isValid();
 };
 
 export const SERVER_CONST = {
