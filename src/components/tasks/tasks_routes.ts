@@ -130,7 +130,6 @@ export const updateTaskInput = [
         );
       }
 
-      // Check against updated start time in body if provided
       if (req.body.estimated_start_time) {
         const startTime = new Date(req.body.estimated_start_time);
         const endTime = new Date(value);
@@ -151,6 +150,11 @@ export class TaskRoutes {
 
   constructor(app: Express) {
     const controller = new TasksController();
+
+    // Nested Project Tasks Endpoint (Cache-Aside Strategy)
+    app
+      .route('/api/projects/:projectId/tasks')
+      .get(authorize, controller.getByProjectHandler);
 
     // Collection Endpoints
     app

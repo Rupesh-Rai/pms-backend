@@ -1,6 +1,6 @@
 import { Roles } from '@/components/roles/roles_entity';
 import { RolesService } from '@/components/roles/roles_service';
-import { RolesUtil } from '@/components/roles/roles_routes';
+import { RolesUtil } from '@/components/roles/roles_util';
 import { UsersService } from '@/components/users/users_service';
 import { encryptString } from '@/utils/common';
 import { config } from '@/utils/config';

@@ -1,15 +1,18 @@
 import { ExpressServer } from '@/express_server';
 import { DatabaseUtil } from '@/utils/db';
 import { DDLUtil } from '@/utils/ddl_util';
+import { redis, CacheService } from '@/utils/redis';
+import { CacheKeys, CacheTTL } from '@/utils/cache_utils';
+import { RolesService } from '@/components/roles/roles_service';
 
 const args = process.argv.slice(2);
 
 async function bootstrap() {
   try {
-    // 1. Initialize and connect to the database via Singleton FIRST
+    // 1. Database Connection
     await DatabaseUtil.getInstance();
 
-    // 2. Check for the --init command line flag to run database setup tasks
+    // 2. DDL Init Check
     if (args.length > 0 && args[0] === '--init') {
       console.log('Running system DDL initialization...');
       await DDLUtil.addDefaultRole();
@@ -18,23 +21,41 @@ async function bootstrap() {
       process.exit(0);
     }
 
-    // 3. Instantiate server ONLY after DB connection is ready (normal server flow)
+    // 3. Connect to Redis & Execute Proactive Cache Warm-up
+    console.log('Connecting to Redis...');
+    await redis.connect();
+
+    console.log('Warming up proactive cache...');
+    const rolesService = await RolesService.createInstance();
+    const rolesResponse = await rolesService.findAll({});
+
+    if (rolesResponse.data) {
+      await CacheService.set(
+        CacheKeys.roles.all,
+        rolesResponse.data,
+        CacheTTL.ROLES
+      );
+      console.log('Roles proactive cache populated successfully.');
+    }
+
+    // 4. Start Express Server
     const server = new ExpressServer();
 
-    // Handle unexpected runtime errors gracefully
     process.on('uncaughtException', (error: Error) => {
       console.error(`Uncaught exception in process ${process.pid}:`, error);
+      redis.disconnect();
       server.closeServer();
     });
 
-    // Handle termination signals (e.g., Ctrl+C or kill commands)
-    process.on('SIGINT', () => {
+    process.on('SIGINT', async () => {
       console.log('Received SIGINT signal. Shutting down...');
+      await redis.quit();
       server.closeServer();
     });
 
-    process.on('SIGTERM', () => {
+    process.on('SIGTERM', async () => {
       console.log('Received SIGTERM signal. Shutting down...');
+      await redis.quit();
       server.closeServer();
     });
   } catch (error) {

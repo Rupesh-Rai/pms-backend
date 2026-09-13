@@ -3,6 +3,8 @@ import { BaseService, ApiResponse } from '@/utils/base_service';
 import { DatabaseUtil } from '@/utils/db';
 import { Tasks } from './tasks_entity';
 import { Files } from '@/components/files/files_entity';
+import { CacheService } from '@/utils/redis';
+import { CacheKeys, CacheTTL } from '@/utils/cache_utils';
 
 export class TasksService extends BaseService<Tasks> {
   private fileRepository!: Repository<Files>;
@@ -178,5 +180,55 @@ export class TasksService extends BaseService<Tasks> {
       status: populatedResult.status,
       data: singleTask as Tasks,
     };
+  }
+
+  /**
+   * READ: Cache-Aside strategy for fetching tasks by Project ID
+   */
+  public async getTasksByProjectId(
+    projectId: string | number
+  ): Promise<Tasks[]> {
+    const cacheKey = CacheKeys.projects.tasks(projectId);
+
+    // 1. Check Redis Cache
+    const cachedTasks = await CacheService.get<Tasks[]>(cacheKey);
+    if (cachedTasks) {
+      return cachedTasks;
+    }
+
+    // 2. Cache Miss: Query DB via TypeORM Repository
+    const tasks = await this.repository.find({
+      where: { project: { project_id: String(projectId) } } as any,
+    });
+
+    const formattedTasks = await this.formatTaskPayload(tasks);
+
+    // 3. Cache in Redis
+    await CacheService.set(cacheKey, formattedTasks, CacheTTL.PROJECT_TASKS);
+
+    return formattedTasks;
+  }
+
+  /**
+   * WRITE: Create task and invalidate parent project task list & stats
+   */
+  public async createTask(taskData: Partial<Tasks>): Promise<Tasks> {
+    // 1. Create and Save entity via Repository
+    const taskEntity = this.repository.create(taskData);
+    const savedTask = await this.repository.save(taskEntity);
+
+    // Extract project ID safely depending on your relation schema
+    const projectId =
+      (savedTask as any).project_id || (savedTask as any).project?.project_id;
+
+    // 2. Invalidate parent project's task list & stats cache keys
+    if (projectId) {
+      await CacheService.del(
+        CacheKeys.projects.tasks(projectId),
+        CacheKeys.projects.stats(projectId)
+      );
+    }
+
+    return savedTask;
   }
 }

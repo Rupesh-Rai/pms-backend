@@ -186,7 +186,5 @@ export class UserRoutes {
       .get(authorize, controller.getOneHandler)
       .put(authorize, validate(validUserInput), controller.updateHandler)
       .delete(authorize, controller.deleteHandler);
-
-    console.log('Initialized routes for UserRoutes');
   }
 }

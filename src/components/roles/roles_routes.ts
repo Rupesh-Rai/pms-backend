@@ -30,7 +30,5 @@ export class RoleRoutes {
       .get(controller.getOneHandler)
       .put(validate(validRoleInput), controller.updateHandler)
       .delete(controller.deleteHandler);
-
-    console.log('Initialized routes for RoleRoutes');
   }
 }

@@ -47,7 +47,6 @@ export class TasksController extends BaseController {
         const taskId = req.params.id as string;
         const userId = req.user?.user_id;
 
-        // 1. Guard check to ensure userId is defined
         if (!userId) {
           res.status(401).json({
             statusCode: 401,
@@ -57,7 +56,6 @@ export class TasksController extends BaseController {
           return;
         }
 
-        // 2. userId is now guaranteed to be a string
         const filesService = await FilesService.createInstance();
         const fileRecord = await filesService.saveFileRecord(
           req.file,
@@ -86,8 +84,9 @@ export class TasksController extends BaseController {
       }
     });
   };
+
   /**
-   * Handles creating a new task record.
+   * Handles creating a new task record and invalidates project cache.
    */
   public addHandler = async (req: Request, res: Response): Promise<void> => {
     if (!hasPermission(req.user?.rights, Rights.TASKS?.ADD || 'add_task')) {
@@ -103,7 +102,6 @@ export class TasksController extends BaseController {
       const service = await TasksService.createInstance();
       const taskPayload = req.body;
 
-      // Validate project_id
       const isValidProject = await ProjectsUtil.checkValidProjectIds([
         taskPayload.project_id,
       ]);
@@ -116,7 +114,6 @@ export class TasksController extends BaseController {
         return;
       }
 
-      // Validate user_id
       const isValidUser = await UsersUtil.checkValidUserIds([
         taskPayload.user_id,
       ]);
@@ -129,11 +126,56 @@ export class TasksController extends BaseController {
         return;
       }
 
-      const createdTask = await service.create(taskPayload);
-      res.status(createdTask.statusCode).json(createdTask);
+      // Calls Cache-Aware createTask method
+      const createdTask = await service.createTask(taskPayload);
+      res.status(201).json({
+        statusCode: 201,
+        status: 'success',
+        data: createdTask,
+      });
     } catch (error: any) {
       console.error(
         `Error in TasksController.addHandler: ${error?.message || error}`
+      );
+      res.status(500).json({
+        statusCode: 500,
+        status: 'error',
+        message: 'Internal server error',
+      });
+    }
+  };
+
+  /**
+   * Handles fetching tasks for a specific project (Cache-Aside Strategy).
+   */
+  public getByProjectHandler = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    if (
+      !hasPermission(req.user?.rights, Rights.TASKS?.GET_ALL || 'get_all_tasks')
+    ) {
+      res.status(403).json({
+        statusCode: 403,
+        status: 'error',
+        message: 'Unauthorized',
+      });
+      return;
+    }
+
+    try {
+      const service = await TasksService.createInstance();
+      const projectId = req.params.projectId as string;
+      const tasks = await service.getTasksByProjectId(projectId);
+
+      res.status(200).json({
+        statusCode: 200,
+        status: 'success',
+        data: tasks,
+      });
+    } catch (error: any) {
+      console.error(
+        `Error in TasksController.getByProjectHandler: ${error?.message || error}`
       );
       res.status(500).json({
         statusCode: 500,

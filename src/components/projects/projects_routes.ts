@@ -86,7 +86,5 @@ export class ProjectRoutes {
       .get(authorize, controller.getOneHandler)
       .put(authorize, validate(validProjectInput), controller.updateHandler)
       .delete(authorize, controller.deleteHandler);
-
-    console.log('Initialized routes for ProjectRoutes');
   }
 }

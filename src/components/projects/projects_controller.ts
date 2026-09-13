@@ -24,7 +24,6 @@ export class ProjectsController extends BaseController {
       const service = await ProjectsService.createInstance();
       const projectPayload = req.body;
 
-      // Validate that all user_ids exist in the database using UsersUtil
       if (projectPayload.user_ids && projectPayload.user_ids.length > 0) {
         const isValidUsers = await UsersUtil.checkValidUserIds(
           projectPayload.user_ids
@@ -88,7 +87,7 @@ export class ProjectsController extends BaseController {
   };
 
   /**
-   * Handles fetching a single project by primary ID.
+   * Handles fetching a single project by primary ID (Cache-Aside Pattern).
    */
   public getOneHandler = async (req: Request, res: Response): Promise<void> => {
     if (
@@ -108,8 +107,24 @@ export class ProjectsController extends BaseController {
     try {
       const service = await ProjectsService.createInstance();
       const id = req.params.id as string;
-      const result = await service.findByIds([id]);
-      res.status(result.statusCode).json(result);
+
+      // Calls Cache-Aside method
+      const project = await service.getProjectById(id);
+
+      if (!project) {
+        res.status(404).json({
+          statusCode: 404,
+          status: 'error',
+          message: 'Project not found',
+        });
+        return;
+      }
+
+      res.status(200).json({
+        statusCode: 200,
+        status: 'success',
+        data: project,
+      });
     } catch (error: any) {
       console.error(
         `Error in ProjectsController.getOneHandler: ${error?.message || error}`
@@ -123,7 +138,7 @@ export class ProjectsController extends BaseController {
   };
 
   /**
-   * Handles updating an existing project record.
+   * Handles updating an existing project record and invalidating cache.
    */
   public updateHandler = async (req: Request, res: Response): Promise<void> => {
     if (
@@ -158,8 +173,14 @@ export class ProjectsController extends BaseController {
 
       updatePayload.updated_at = new Date();
 
-      const result = await service.update(id, updatePayload);
-      res.status(result.statusCode).json(result);
+      // Calls cache-invalidation update method
+      const updatedData = await service.updateProject(id, updatePayload);
+
+      res.status(200).json({
+        statusCode: 200,
+        status: 'success',
+        data: updatedData,
+      });
     } catch (error: any) {
       console.error(
         `Error in ProjectsController.updateHandler: ${error?.message || error}`
@@ -173,7 +194,7 @@ export class ProjectsController extends BaseController {
   };
 
   /**
-   * Handles project deletion by ID.
+   * Handles project deletion by ID and purges Redis cache key pattern.
    */
   public deleteHandler = async (req: Request, res: Response): Promise<void> => {
     if (
@@ -193,8 +214,15 @@ export class ProjectsController extends BaseController {
     try {
       const service = await ProjectsService.createInstance();
       const id = req.params.id as string;
-      const result = await service.delete(id);
-      res.status(result.statusCode).json(result);
+
+      // Calls pattern-purging delete method
+      await service.deleteProject(id);
+
+      res.status(200).json({
+        statusCode: 200,
+        status: 'success',
+        message: 'Project deleted successfully',
+      });
     } catch (error: any) {
       console.error(
         `Error in ProjectsController.deleteHandler: ${error?.message || error}`

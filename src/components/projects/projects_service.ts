@@ -3,6 +3,8 @@ import { BaseService } from '@/utils/base_service';
 import { DatabaseUtil } from '@/utils/db';
 import { Projects } from './projects_entity';
 import { Users } from '../users/users_entity';
+import { CacheService } from '@/utils/redis';
+import { CacheKeys, CacheTTL } from '@/utils/cache_utils';
 
 export class ProjectsService extends BaseService<Projects> {
   private constructor(repository: Repository<Projects>) {
@@ -100,5 +102,62 @@ export class ProjectsService extends BaseService<Projects> {
       ...baseResult,
       data: Array.isArray(baseResult.data) ? populatedData : populatedData[0],
     };
+  }
+
+  /**
+   * READ: Cache-Aside strategy for fetching single project details
+   */
+  public async getProjectById(projectId: string | number) {
+    const cacheKey = CacheKeys.projects.byId(projectId);
+
+    // 1. Check Redis Cache
+    const cachedProject = await CacheService.get<any>(cacheKey);
+    if (cachedProject) {
+      return cachedProject;
+    }
+
+    // 2. Cache Miss: Query DB using inherited findByIds to ensure populated users
+    const result = await this.findByIds([String(projectId)]);
+    if (!result.data || result.data.length === 0) {
+      return null;
+    }
+
+    const project = result.data[0];
+
+    // 3. Store in Redis with project-specific TTL (30 minutes)
+    await CacheService.set(cacheKey, project, CacheTTL.PROJECT);
+
+    return project;
+  }
+
+  /**
+   * WRITE: Update project and invalidate all associated cache keys
+   */
+  public async updateProject(projectId: string | number, updateData: any) {
+    const idStr = String(projectId);
+
+    // Perform update and get populated result via inherited method
+    const result = await this.update(idStr, updateData);
+
+    // Invalidate individual project cache and dependent stats key
+    await CacheService.del(
+      CacheKeys.projects.byId(idStr),
+      CacheKeys.projects.stats(idStr)
+    );
+
+    return result.data;
+  }
+
+  /**
+   * WRITE: Delete project and purge all related sub-keys using wildcard pattern
+   */
+  public async deleteProject(projectId: string | number) {
+    const idStr = String(projectId);
+
+    // Delete using TypeORM repository
+    await this.repository.delete(idStr);
+
+    // Purge project:10, project:10:tasks, project:10:members, project:10:stats
+    await CacheService.clearPattern(CacheKeys.projects.wildcard(idStr));
   }
 }
