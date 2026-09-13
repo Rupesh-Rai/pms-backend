@@ -164,5 +164,10 @@ export class TaskRoutes {
       .get(authorize, controller.getOneHandler)
       .put(authorize, validate(updateTaskInput), controller.updateHandler)
       .delete(authorize, controller.deleteHandler);
+
+    // Attachment Route
+    app
+      .route(`${this.baseEndPoint}/:id/attachments`)
+      .post(authorize, controller.uploadAttachmentHandler);
   }
 }

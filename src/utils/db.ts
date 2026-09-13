@@ -5,6 +5,7 @@ import { Users } from '@/components/users/users_entity';
 import { Projects } from '@/components/projects/projects_entity';
 import { Tasks } from '@/components/tasks/tasks_entity';
 import { Comments } from '@/components/comments/comments_entity';
+import { Files } from '@/components/files/files_entity';
 
 export class DatabaseUtil {
   private server_config: IServerConfig = config;
@@ -44,8 +45,8 @@ export class DatabaseUtil {
         username: db_config.username,
         password: db_config.password,
         database: db_config.dbname,
-        entities: [Roles, Users, Projects, Tasks, Comments],
-        synchronize: false, // Set to true only in development; false in production
+        entities: [Roles, Users, Projects, Tasks, Comments, Files],
+        synchronize: true, // Set to true only in development; false in production
         logging: false,
         extra: {
           max: 10, // PostgreSQL connection pool size

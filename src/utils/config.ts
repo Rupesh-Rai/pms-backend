@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ export interface IServerConfig {
     password: string;
   };
   front_app_url: string;
+  attached_files_path: string;
 }
 
 export const config: IServerConfig = {
@@ -48,4 +50,7 @@ export const config: IServerConfig = {
     password: process.env.EMAIL_PASSWORD || '',
   },
   front_app_url: process.env.FRONT_APP_URL || 'http://localhost:3000',
+  attached_files_path:
+    process.env.ATTACHED_FILES_PATH ||
+    path.join(process.cwd(), 'attachedFiles'),
 };

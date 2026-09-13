@@ -1,30 +1,53 @@
-import { Repository } from 'typeorm';
-import { BaseService } from '@/utils/base_service';
+import { Repository, In } from 'typeorm';
+import { BaseService, ApiResponse } from '@/utils/base_service';
 import { DatabaseUtil } from '@/utils/db';
 import { Tasks } from './tasks_entity';
-import { ApiResponse } from '@/utils/base_service';
+import { Files } from '@/components/files/files_entity';
 
 export class TasksService extends BaseService<Tasks> {
-  private constructor(repository: Repository<Tasks>) {
+  private fileRepository!: Repository<Files>;
+
+  private constructor(
+    repository: Repository<Tasks>,
+    fileRepository: Repository<Files>
+  ) {
     super(repository);
+    this.fileRepository = fileRepository;
   }
 
   public static async createInstance(): Promise<TasksService> {
     const dbUtil = await DatabaseUtil.getInstance();
     const repository = dbUtil.getRepository(Tasks);
-    return new TasksService(repository);
+    const fileRepository = dbUtil.getRepository(Files);
+    return new TasksService(repository, fileRepository);
   }
 
-  /**
-   * Helper method to map populated project and user relations into
-   * projectDetails and userDetails objects across task entities.
-   */
-  private formatTaskPayload(tasks: any[]) {
+  private async formatTaskPayload(tasks: any[]) {
+    // Extract all file IDs across tasks
+    const allFileIds = tasks.flatMap((task) => task.supported_files || []);
+
+    let filesMap: Record<string, Files> = {};
+    if (allFileIds.length > 0) {
+      const files = await this.fileRepository.find({
+        where: { file_id: In(allFileIds) },
+      });
+      filesMap = files.reduce(
+        (acc, file) => {
+          acc[file.file_id] = file;
+          return acc;
+        },
+        {} as Record<string, Files>
+      );
+    }
+
     return tasks.map((item) => {
       const formattedItem = { ...item };
 
       formattedItem.projectDetails = item.project;
       formattedItem.userDetails = item.user;
+      formattedItem.fileDetails = (item.supported_files || [])
+        .map((fileId: string) => filesMap[fileId])
+        .filter(Boolean);
 
       delete formattedItem.project;
       delete formattedItem.user;
@@ -33,10 +56,6 @@ export class TasksService extends BaseService<Tasks> {
     });
   }
 
-  /**
-   * Overrides BaseService.findAll to return tasks with populated
-   * projectDetails and userDetails.
-   */
   public override async findAll(
     queryParams: Record<string, any> = {}
   ): Promise<ApiResponse<Tasks[]>> {
@@ -72,7 +91,7 @@ export class TasksService extends BaseService<Tasks> {
     }
 
     const data = await queryBuilder.getMany();
-    const formattedData = this.formatTaskPayload(data);
+    const formattedData = await this.formatTaskPayload(data);
 
     return {
       statusCode: 200,
@@ -81,9 +100,6 @@ export class TasksService extends BaseService<Tasks> {
     };
   }
 
-  /**
-   * Overrides BaseService.findByIds to retrieve and populate a single task record by ID.
-   */
   public override async findByIds(
     ids: string[]
   ): Promise<ApiResponse<Tasks[]>> {
@@ -110,7 +126,7 @@ export class TasksService extends BaseService<Tasks> {
       .where('task.task_id IN (:...ids)', { ids })
       .getMany();
 
-    const formattedData = this.formatTaskPayload(tasks);
+    const formattedData = await this.formatTaskPayload(tasks);
 
     return {
       statusCode: 200,
@@ -119,23 +135,39 @@ export class TasksService extends BaseService<Tasks> {
     };
   }
 
-  /**
-   * Overrides BaseService.update to update a task and return the populated record.
-   */
-  /**
-   * Overrides BaseService.update to update a task and return the single populated record.
-   */
+  public async attachFileToTask(
+    taskId: string,
+    fileId: string
+  ): Promise<ApiResponse<Tasks>> {
+    const taskResult = await this.findByIds([taskId]);
+    if (!taskResult.data || taskResult.data.length === 0) {
+      return {
+        statusCode: 404,
+        status: 'error' as const,
+        message: 'Task not found',
+      } as any;
+    }
+
+    const task = taskResult.data[0];
+    const updatedFiles = Array.from(
+      new Set([...(task.supported_files || []), fileId])
+    );
+
+    await this.repository.update(taskId, {
+      supported_files: updatedFiles,
+      updated_at: new Date(),
+    });
+
+    return await this.update(taskId, { supported_files: updatedFiles });
+  }
+
   public override async update(
     id: string,
     updatePayload: Record<string, any>
   ): Promise<ApiResponse<Tasks>> {
-    // 1. Perform database update
     await this.repository.update(id, updatePayload);
-
-    // 2. Fetch the updated task with populated relations
     const populatedResult = await this.findByIds([id]);
 
-    // 3. Unbox array to match single entity ApiResponse<Tasks> signature
     const singleTask =
       populatedResult.data && populatedResult.data.length > 0
         ? (populatedResult.data[0] as unknown as Tasks)
