@@ -40,6 +40,28 @@ export class UsersUtil {
   }
 
   /**
+   * Fetches a single user record by user ID.
+   * @param {string} userId - UUID of the user
+   */
+  public static async getUserById(userId: string) {
+    try {
+      if (!userId) return null;
+
+      const userService = await UsersService.createInstance();
+      const response = await userService.findOne(userId);
+
+      if (response && response.data) {
+        return response.data;
+      }
+    } catch (error: any) {
+      console.error(
+        `Error in UsersUtil.getUserById: ${error?.message || error}`
+      );
+    }
+    return null;
+  }
+
+  /**
    * Verifies whether all provided user_ids exist in the database.
    * @param {string[]} user_ids - Array of UUIDs to validate
    * @returns {Promise<boolean>} True if all user IDs exist, false otherwise

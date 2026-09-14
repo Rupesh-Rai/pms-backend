@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { BaseController } from '@/utils/base_controller';
 import { TasksService } from './tasks_service';
+import { TaskUtil } from './tasks_util';
 import { UsersUtil } from '@/components/users/users_utils';
 import { ProjectsUtil } from '@/components/projects/projects_utils';
 import { hasPermission, Rights } from '@/utils/common';
@@ -86,7 +87,7 @@ export class TasksController extends BaseController {
   };
 
   /**
-   * Handles creating a new task record and invalidates project cache.
+   * Handles creating a new task record, invalidating project cache, and triggering background notifications.
    */
   public addHandler = async (req: Request, res: Response): Promise<void> => {
     if (!hasPermission(req.user?.rights, Rights.TASKS?.ADD || 'add_task')) {
@@ -126,13 +127,35 @@ export class TasksController extends BaseController {
         return;
       }
 
-      // Calls Cache-Aware createTask method
+      // 1. Calls Cache-Aware createTask method
       const createdTask = await service.createTask(taskPayload);
+
+      // 2. Return HTTP response immediately (Non-blocking)
       res.status(201).json({
         statusCode: 201,
         status: 'success',
         data: createdTask,
       });
+
+      // 3. Trigger background notification job asynchronously
+      try {
+        const project = await ProjectsUtil.getProjectById(
+          taskPayload.project_id
+        );
+        const projectUserIds = project?.user_ids || [taskPayload.user_id];
+
+        await TaskUtil.notifyUsers(
+          projectUserIds,
+          createdTask?.name || taskPayload.name,
+          'add'
+        );
+      } catch (notifyError: any) {
+        console.error(
+          `[TasksController] Asynchronous notification failed: ${
+            notifyError?.message || notifyError
+          }`
+        );
+      }
     } catch (error: any) {
       console.error(
         `Error in TasksController.addHandler: ${error?.message || error}`
@@ -252,7 +275,7 @@ export class TasksController extends BaseController {
   };
 
   /**
-   * Handles updating an existing task record.
+   * Handles updating an existing task record and enqueuing update notifications.
    */
   public updateHandler = async (req: Request, res: Response): Promise<void> => {
     if (!hasPermission(req.user?.rights, Rights.TASKS?.EDIT || 'edit_task')) {
@@ -301,6 +324,22 @@ export class TasksController extends BaseController {
 
       const result = await service.update(id, updatePayload);
       res.status(result.statusCode).json(result);
+
+      if (result.statusCode === 200 && updatePayload.user_id) {
+        try {
+          await TaskUtil.notifyUsers(
+            [updatePayload.user_id],
+            updatePayload.name || 'Task',
+            'update'
+          );
+        } catch (notifyError: any) {
+          console.error(
+            `[TasksController] Asynchronous notification failed: ${
+              notifyError?.message || notifyError
+            }`
+          );
+        }
+      }
     } catch (error: any) {
       console.error(
         `Error in TasksController.updateHandler: ${error?.message || error}`
@@ -314,7 +353,7 @@ export class TasksController extends BaseController {
   };
 
   /**
-   * Handles deleting a task by ID.
+   * Handles deleting a task by ID and enqueuing deletion notifications.
    */
   public deleteHandler = async (req: Request, res: Response): Promise<void> => {
     if (
@@ -333,6 +372,22 @@ export class TasksController extends BaseController {
       const id = req.params.id as string;
       const result = await service.delete(id);
       res.status(result.statusCode).json(result);
+
+      if (result.statusCode === 200 && req.user?.user_id) {
+        try {
+          await TaskUtil.notifyUsers(
+            [req.user.user_id],
+            'Deleted Task',
+            'delete'
+          );
+        } catch (notifyError: any) {
+          console.error(
+            `[TasksController] Asynchronous notification failed: ${
+              notifyError?.message || notifyError
+            }`
+          );
+        }
+      }
     } catch (error: any) {
       console.error(
         `Error in TasksController.deleteHandler: ${error?.message || error}`

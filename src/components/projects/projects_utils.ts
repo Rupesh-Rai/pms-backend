@@ -32,4 +32,35 @@ export class ProjectsUtil {
       return false;
     }
   }
+
+  /**
+   * Retrieves a single project entity by its ID.
+   * @param project_id - Project UUID to fetch.
+   * @returns Promise<any | null> The project data record or null if not found.
+   */
+  public static async getProjectById(project_id: string): Promise<any | null> {
+    if (!project_id) {
+      return null;
+    }
+
+    try {
+      const projectService = await ProjectsService.createInstance();
+      const projectResult = await projectService.findByIds([project_id]);
+
+      if (
+        !projectResult ||
+        !projectResult.data ||
+        projectResult.data.length === 0
+      ) {
+        return null;
+      }
+
+      return projectResult.data[0];
+    } catch (error: any) {
+      console.error(
+        `Error in ProjectsUtil.getProjectById: ${error?.message || error}`
+      );
+      return null;
+    }
+  }
 }

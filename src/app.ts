@@ -4,6 +4,8 @@ import { DDLUtil } from '@/utils/ddl_util';
 import { redis, CacheService } from '@/utils/redis';
 import { CacheKeys, CacheTTL } from '@/utils/cache_utils';
 import { RolesService } from '@/components/roles/roles_service';
+import { NotificationUtil } from '@/utils/notification_util';
+import { QueueWorker } from '@/workers/queue_worker';
 
 const args = process.argv.slice(2);
 
@@ -38,7 +40,18 @@ async function bootstrap() {
       console.log('Roles proactive cache populated successfully.');
     }
 
-    // 4. Start Express Server
+    // 4. Initialize Notification System & Queue Worker
+    console.log('Initializing Notification System & Queue Worker...');
+    NotificationUtil.init({
+      user: process.env.SMTP_USER || '',
+      pass: process.env.SMTP_PASS || '',
+      from: process.env.SMTP_FROM || 'no-reply@yourdomain.com',
+    });
+
+    QueueWorker.init();
+    QueueWorker.beginProcessing();
+
+    // 5. Start Express Server
     const server = new ExpressServer();
 
     process.on('uncaughtException', (error: Error) => {
