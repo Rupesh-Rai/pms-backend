@@ -1,5 +1,6 @@
 import nodemailer, { Transporter } from 'nodemailer';
-import Queue from 'bull';
+import { Queue } from 'bullmq';
+import { redisConnection } from './redis';
 
 export interface EmailJobData {
   to: string;
@@ -10,13 +11,12 @@ export interface EmailJobData {
 export class NotificationUtil {
   private static transporter: Transporter;
   private static from: string;
-  public static emailQueue: Queue.Queue<EmailJobData>;
+  public static emailQueue: Queue<EmailJobData>;
 
   public static init(config: {
     user: string;
     pass: string;
     from: string;
-    redisUrl?: string;
   }): void {
     NotificationUtil.from = config.from;
 
@@ -31,15 +31,8 @@ export class NotificationUtil {
     }
 
     if (!NotificationUtil.emailQueue) {
-      const redisHost = process.env.REDIS_HOST || '127.0.0.1';
-      const redisPort = Number(process.env.REDIS_PORT) || 6379;
-
-      // Passing options object directly avoids string parsing issues with Bull
       NotificationUtil.emailQueue = new Queue<EmailJobData>('emailQueue', {
-        redis: {
-          host: redisHost,
-          port: redisPort,
-        },
+        connection: redisConnection,
       });
     }
   }
@@ -75,6 +68,18 @@ export class NotificationUtil {
         'NotificationUtil is not initialized. Call NotificationUtil.init() first.'
       );
     }
-    await NotificationUtil.emailQueue.add({ to, subject, body });
+
+    // BullMQ handles attempts and exponential backoff configuration directly on job addition
+    await NotificationUtil.emailQueue.add(
+      'sendEmail',
+      { to, subject, body },
+      {
+        attempts: 4,
+        backoff: {
+          type: 'exponential',
+          delay: 2000,
+        },
+      }
+    );
   }
 }

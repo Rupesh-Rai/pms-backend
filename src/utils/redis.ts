@@ -1,8 +1,18 @@
 import Redis from 'ioredis';
+import { ConnectionOptions } from 'bullmq';
 
-export const redis = new Redis({
+export const redisConfig = {
   host: process.env.REDIS_HOST || '127.0.0.1',
   port: Number(process.env.REDIS_PORT) || 6379,
+};
+
+// Export connection options explicitly for BullMQ
+export const redisConnection: ConnectionOptions = {
+  ...redisConfig,
+};
+
+export const redis = new Redis({
+  ...redisConfig,
   lazyConnect: true,
 });
 

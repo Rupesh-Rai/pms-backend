@@ -54,23 +54,38 @@ async function bootstrap() {
     // 5. Start Express Server
     const server = new ExpressServer();
 
+    // Graceful Shutdown Cleanup Handler
+    const handleShutdown = async (signal: string) => {
+      console.log(`Received ${signal}. Gracefully closing application...`);
+
+      try {
+        // Close BullMQ connections
+        if (NotificationUtil.emailQueue) {
+          await NotificationUtil.emailQueue.close();
+        }
+        if (QueueWorker['emailWorker']) {
+          await QueueWorker['emailWorker'].close();
+        }
+
+        // Close ioredis connection
+        await redis.quit();
+
+        // Close Express Server
+        server.closeServer();
+        process.exit(0);
+      } catch (err) {
+        console.error('Error during graceful shutdown:', err);
+        process.exit(1);
+      }
+    };
+
     process.on('uncaughtException', (error: Error) => {
       console.error(`Uncaught exception in process ${process.pid}:`, error);
-      redis.disconnect();
-      server.closeServer();
+      handleShutdown('uncaughtException');
     });
 
-    process.on('SIGINT', async () => {
-      console.log('Received SIGINT signal. Shutting down...');
-      await redis.quit();
-      server.closeServer();
-    });
-
-    process.on('SIGTERM', async () => {
-      console.log('Received SIGTERM signal. Shutting down...');
-      await redis.quit();
-      server.closeServer();
-    });
+    process.on('SIGINT', () => handleShutdown('SIGINT'));
+    process.on('SIGTERM', () => handleShutdown('SIGTERM'));
   } catch (error) {
     console.error('Failed to start application:', error);
     process.exit(1);

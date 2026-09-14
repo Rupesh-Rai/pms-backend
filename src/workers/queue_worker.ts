@@ -1,50 +1,57 @@
-import Queue from 'bull';
+import { Worker, Job } from 'bullmq';
 import { NotificationUtil, EmailJobData } from '@/utils/notification_util';
+import { redisConnection } from '@/utils/redis';
 
 export class QueueWorker {
-  private static emailQueue: Queue.Queue<EmailJobData>;
-  private static MAX_ATTEMPTS = 4;
+  private static emailWorker: Worker<EmailJobData>;
 
-  public static init(redisUrl?: string): void {
-    const connectionUrl =
-      redisUrl ||
-      `redis://${process.env.REDIS_HOST || '127.0.0.1'}:${process.env.REDIS_PORT || 6379}`;
-    QueueWorker.emailQueue = new Queue<EmailJobData>(
-      'emailQueue',
-      connectionUrl
-    );
+  public static init(): void {
+    // BullMQ uses redisConnection directly inside the Worker constructor
   }
 
   public static beginProcessing(): void {
-    if (!QueueWorker.emailQueue) {
-      throw new Error(
-        'QueueWorker not initialized. Call QueueWorker.init() first.'
-      );
+    if (QueueWorker.emailWorker) {
+      return;
     }
 
     console.log('[QueueWorker] Starting email queue processing...');
 
-    QueueWorker.emailQueue.process(async (job) => {
-      const { to, subject, body } = job.data;
-      const sent = await NotificationUtil.sendEmail(to, subject, body);
+    QueueWorker.emailWorker = new Worker<EmailJobData>(
+      'emailQueue',
+      async (job: Job<EmailJobData>) => {
+        const { to, subject, body } = job.data;
+        const sent = await NotificationUtil.sendEmail(to, subject, body);
 
-      if (!sent) {
-        throw new Error(`Failed delivery attempt for recipient: ${to}`);
+        if (!sent) {
+          throw new Error(`Failed delivery attempt for recipient: ${to}`);
+        }
+        console.log(`[QueueWorker] Email successfully dispatched to: ${to}`);
+      },
+      {
+        connection: redisConnection,
       }
-      console.log(`[QueueWorker] Email successfully dispatched to: ${to}`);
+    );
+
+    QueueWorker.emailWorker.on('completed', (job: Job<EmailJobData>) => {
+      console.log(`[QueueWorker] Job ${job.id} completed successfully.`);
     });
 
-    QueueWorker.emailQueue.on('failed', async (job, err) => {
-      if (job.attemptsMade >= QueueWorker.MAX_ATTEMPTS) {
-        console.error(
-          `[QueueWorker] Permanent failure for job ${job.id} (Recipient: ${job.data.to}): ${err.message}`
-        );
-      } else {
-        console.warn(
-          `[QueueWorker] Retrying job ${job.id} (Attempt ${job.attemptsMade}/${QueueWorker.MAX_ATTEMPTS})...`
-        );
-        await job.retry();
+    QueueWorker.emailWorker.on(
+      'failed',
+      (job: Job<EmailJobData> | undefined, err: Error) => {
+        if (!job) return;
+
+        const maxAttempts = job.opts.attempts || 1;
+        if (job.attemptsMade >= maxAttempts) {
+          console.error(
+            `[QueueWorker] Permanent failure for job ${job.id} (Recipient: ${job.data.to}): ${err.message}`
+          );
+        } else {
+          console.warn(
+            `[QueueWorker] Retrying job ${job.id} (Attempt ${job.attemptsMade}/${maxAttempts})...`
+          );
+        }
       }
-    });
+    );
   }
 }
