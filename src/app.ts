@@ -11,8 +11,8 @@ const args = process.argv.slice(2);
 
 async function bootstrap() {
   try {
-    // 1. Database Connection
-    await DatabaseUtil.getInstance();
+    // 1. Initialize Database Singleton Pool
+    const dbInstance = await DatabaseUtil.getInstance();
 
     // 2. DDL Init Check
     if (args.length > 0 && args[0] === '--init') {
@@ -23,15 +23,16 @@ async function bootstrap() {
       process.exit(0);
     }
 
-    // 3. Connect to Redis & Execute Proactive Cache Warm-up
+    // 3. Connect to Redis
     console.log('Connecting to Redis...');
     await redis.connect();
 
+    // 4. Proactive Cache Warm-up (Reuses the already-initialized DataSource pool safely)
     console.log('Warming up proactive cache...');
     const rolesService = await RolesService.createInstance();
     const rolesResponse = await rolesService.findAll({});
 
-    if (rolesResponse.data) {
+    if (rolesResponse?.data) {
       await CacheService.set(
         CacheKeys.roles.all,
         rolesResponse.data,
@@ -40,7 +41,7 @@ async function bootstrap() {
       console.log('Roles proactive cache populated successfully.');
     }
 
-    // 4. Initialize Notification System & Queue Worker
+    // 5. Initialize Notification System & Queue Worker
     console.log('Initializing Notification System & Queue Worker...');
     NotificationUtil.init({
       user: process.env.SMTP_USER || '',
@@ -51,7 +52,7 @@ async function bootstrap() {
     QueueWorker.init();
     QueueWorker.beginProcessing();
 
-    // 5. Start Express Server
+    // 6. Start Express Server
     const server = new ExpressServer();
 
     // Graceful Shutdown Cleanup Handler
@@ -59,7 +60,6 @@ async function bootstrap() {
       console.log(`Received ${signal}. Gracefully closing application...`);
 
       try {
-        // Close BullMQ connections
         if (NotificationUtil.emailQueue) {
           await NotificationUtil.emailQueue.close();
         }
@@ -67,10 +67,12 @@ async function bootstrap() {
           await QueueWorker['emailWorker'].close();
         }
 
-        // Close ioredis connection
         await redis.quit();
 
-        // Close Express Server
+        if (dbInstance.isInitialized) {
+          await dbInstance.destroy();
+        }
+
         server.closeServer();
         process.exit(0);
       } catch (err) {

@@ -2,7 +2,7 @@ import type { Express } from 'express';
 import { body } from 'express-validator';
 import { validate } from '@/utils/validator';
 import { RolesController } from './roles_controller';
-import { authorize } from '@/utils/auth_util';
+import { authorize } from '@/middlewares/auth_middleware';
 
 export const validRoleInput = [
   body('name').trim().notEmpty().withMessage('It should be required'),

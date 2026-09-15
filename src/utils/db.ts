@@ -10,56 +10,87 @@ import { Files } from '@/components/files/files_entity';
 export class DatabaseUtil {
   private server_config: IServerConfig = config;
   private static connection: DataSource | null = null;
+  private static initPromise: Promise<DataSource> | null = null;
   private repositories: Map<string, Repository<any>> = new Map();
   private static instance: DatabaseUtil;
 
-  // Private constructor prevents direct instantiation via `new`
   private constructor() {}
 
   /**
-   * Returns the singleton instance of DatabaseUtil, initializing the connection if necessary.
+   * Returns the singleton instance of DatabaseUtil, safely waiting for pending connection handshakes.
    */
   public static async getInstance(): Promise<DatabaseUtil> {
     if (!DatabaseUtil.instance) {
       DatabaseUtil.instance = new DatabaseUtil();
-      await DatabaseUtil.instance.connectDatabase();
     }
+
+    await DatabaseUtil.instance.connectDatabase();
     return DatabaseUtil.instance;
   }
 
   /**
-   * Establishes a connection using a PostgreSQL connection pool or returns the existing DataSource.
+   * Checks if the underlying TypeORM DataSource connection is initialized.
+   */
+  public get isInitialized(): boolean {
+    return DatabaseUtil.connection
+      ? DatabaseUtil.connection.isInitialized
+      : false;
+  }
+
+  /**
+   * Establishes connection pool or locks execution if connection initialization is in progress.
    */
   public async connectDatabase(): Promise<DataSource> {
     if (DatabaseUtil.connection && DatabaseUtil.connection.isInitialized) {
       return DatabaseUtil.connection;
     }
 
-    try {
-      const db_config = this.server_config.db_config;
+    // Prevents concurrent caller races during app boot
+    if (!DatabaseUtil.initPromise) {
+      DatabaseUtil.initPromise = (async () => {
+        try {
+          const db_config = this.server_config.db_config;
 
-      const AppSource = new DataSource({
-        type: 'postgres',
-        host: db_config.host,
-        port: db_config.port,
-        username: db_config.username,
-        password: db_config.password,
-        database: db_config.dbname,
-        entities: [Roles, Users, Projects, Tasks, Comments, Files],
-        synchronize: true, // Set to true only in development; false in production
-        logging: false,
-        extra: {
-          max: 10, // PostgreSQL connection pool size
-          idleTimeoutMillis: 30000,
-        },
-      });
+          const AppSource = new DataSource({
+            type: 'postgres',
+            host: db_config.host,
+            port: db_config.port,
+            username: db_config.username,
+            password: db_config.password,
+            database: db_config.dbname,
+            entities: [Roles, Users, Projects, Tasks, Comments, Files],
+            synchronize: false, // Set to true only in development; false in production
+            logging: false,
+            extra: {
+              max: 10, // PostgreSQL connection pool size
+              idleTimeoutMillis: 30000,
+            },
+          });
 
-      DatabaseUtil.connection = await AppSource.initialize();
-      console.log('Connected to the database with connection pool.');
-      return DatabaseUtil.connection;
-    } catch (error: any) {
-      console.error('Error connecting to the database:', error?.message);
-      throw error;
+          DatabaseUtil.connection = await AppSource.initialize();
+          console.log('Connected to the database with connection pool.');
+          return DatabaseUtil.connection;
+        } catch (error: any) {
+          DatabaseUtil.initPromise = null; // Clear lock on connection failure
+          console.error('Error connecting to the database:', error?.message);
+          throw error;
+        }
+      })();
+    }
+
+    return DatabaseUtil.initPromise;
+  }
+
+  /**
+   * Gracefully shuts down the database connection pool on server stop.
+   */
+  public async destroy(): Promise<void> {
+    if (DatabaseUtil.connection && DatabaseUtil.connection.isInitialized) {
+      await DatabaseUtil.connection.destroy();
+      DatabaseUtil.connection = null;
+      DatabaseUtil.initPromise = null;
+      this.repositories.clear();
+      console.log('Database connection pool successfully closed.');
     }
   }
 

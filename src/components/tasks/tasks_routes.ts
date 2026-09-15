@@ -2,7 +2,7 @@ import { Express } from 'express';
 import { TasksController } from './tasks_controller';
 import { body } from 'express-validator';
 import { checkValidDate } from '@/utils/common';
-import { authorize } from '@/utils/auth_util';
+import { authorize } from '@/middlewares/auth_middleware';
 import { validate } from '@/utils/validator';
 
 export const validTaskInput = [

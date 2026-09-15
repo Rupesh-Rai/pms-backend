@@ -1,6 +1,6 @@
 import { Express } from 'express';
 import { FilesController } from './files_controller';
-import { authorize } from '@/utils/auth_util';
+import { authorize } from '@/middlewares/auth_middleware';
 
 export class FilesRoutes {
   private baseEndPoint = '/api/files';

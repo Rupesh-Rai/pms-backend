@@ -1,7 +1,7 @@
 import { Express } from 'express';
 import { body } from 'express-validator';
 import { validate } from '@/utils/validator';
-import { authorize } from '@/utils/auth_util';
+import { authorize } from '@/middlewares/auth_middleware';
 import { checkValidDate } from '@/utils/common';
 import { ProjectsController } from './projects_controller';
 

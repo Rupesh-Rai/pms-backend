@@ -3,7 +3,7 @@ import { body } from 'express-validator';
 import { validate } from '@/utils/validator';
 import { RolesUtil } from '@/components/roles/roles_util';
 import { UsersController } from './users_controller';
-import { authorize } from '@/utils/auth_util';
+import { authorize } from '@/middlewares/auth_middleware';
 
 // ============================================================================
 // Input Validation Schema Definitions
