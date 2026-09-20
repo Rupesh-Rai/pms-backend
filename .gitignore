@@ -5,3 +5,4 @@ dist/
 attachedFiles/*
 !attachedFiles/.gitkeep
 coverage/
+.env.test

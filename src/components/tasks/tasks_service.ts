@@ -25,7 +25,6 @@ export class TasksService extends BaseService<Tasks> {
   }
 
   private async formatTaskPayload(tasks: any[]) {
-    // Extract all file IDs across tasks
     const allFileIds = tasks.flatMap((task) => task.supported_files || []);
 
     let filesMap: Record<string, Files> = {};
@@ -105,10 +104,11 @@ export class TasksService extends BaseService<Tasks> {
   public override async findByIds(
     ids: string[]
   ): Promise<ApiResponse<Tasks[]>> {
+    // Return 200 status with empty array if no IDs provided
     if (!ids || ids.length === 0) {
       return {
-        statusCode: 400,
-        status: 'error' as const,
+        statusCode: 200,
+        status: 'success' as const,
         data: [],
       };
     }
@@ -155,18 +155,32 @@ export class TasksService extends BaseService<Tasks> {
       new Set([...(task.supported_files || []), fileId])
     );
 
-    await this.repository.update(taskId, {
-      supported_files: updatedFiles,
-      updated_at: new Date(),
-    });
-
     return await this.update(taskId, { supported_files: updatedFiles });
   }
 
+  /**
+   * WRITE: Update task and invalidate parent project task list & stats
+   */
   public override async update(
     id: string,
     updatePayload: Record<string, any>
   ): Promise<ApiResponse<Tasks>> {
+    // 1. Fetch existing task
+    const existingTask = await this.repository.findOne({
+      where: { task_id: id } as any,
+      relations: { project: true },
+    });
+
+    // Guard clause: Return 404 if record doesn't exist
+    if (!existingTask) {
+      return {
+        statusCode: 404,
+        status: 'error' as const,
+        message: 'Task not found',
+      } as any;
+    }
+
+    // 2. Perform DB update
     await this.repository.update(id, updatePayload);
     const populatedResult = await this.findByIds([id]);
 
@@ -175,11 +189,51 @@ export class TasksService extends BaseService<Tasks> {
         ? (populatedResult.data[0] as unknown as Tasks)
         : null;
 
+    // 3. Invalidate Redis cache
+    const projectId =
+      existingTask?.project?.project_id || (existingTask as any)?.project_id;
+
+    if (projectId) {
+      await CacheService.del(
+        CacheKeys.projects.tasks(String(projectId)),
+        CacheKeys.projects.stats(String(projectId))
+      );
+    }
+
     return {
-      statusCode: populatedResult.statusCode,
-      status: populatedResult.status,
+      statusCode: 200,
+      status: 'success' as const,
       data: singleTask as Tasks,
     };
+  }
+
+  /**
+   * WRITE: Delete task and invalidate parent project task list & stats
+   */
+  public override async delete(id: string): Promise<ApiResponse<Tasks>> {
+    // 1. Fetch task using object-based relations syntax
+    const existingTask = await this.repository.findOne({
+      where: { task_id: id } as any,
+      relations: { project: true },
+    });
+
+    // 2. Delegate database removal to BaseService
+    const response = await super.delete(id);
+
+    // 3. Invalidate Redis cache on success
+    if (response.statusCode === 200) {
+      const projectId =
+        existingTask?.project?.project_id || (existingTask as any)?.project_id;
+
+      if (projectId) {
+        await CacheService.del(
+          CacheKeys.projects.tasks(String(projectId)),
+          CacheKeys.projects.stats(String(projectId))
+        );
+      }
+    }
+
+    return response;
   }
 
   /**
@@ -188,22 +242,26 @@ export class TasksService extends BaseService<Tasks> {
   public async getTasksByProjectId(
     projectId: string | number
   ): Promise<Tasks[]> {
-    const cacheKey = CacheKeys.projects.tasks(projectId);
+    const cleanProjectId = String(projectId);
+    const cacheKey = CacheKeys.projects.tasks(cleanProjectId);
 
     // 1. Check Redis Cache
     const cachedTasks = await CacheService.get<Tasks[]>(cacheKey);
-    if (cachedTasks) {
+    if (cachedTasks !== null) {
       return cachedTasks;
     }
 
-    // 2. Cache Miss: Query DB via TypeORM Repository
-    const tasks = await this.repository.find({
-      where: { project: { project_id: String(projectId) } } as any,
-    });
+    // 2. Query DB
+    const tasks = await this.repository
+      .createQueryBuilder('task')
+      .leftJoinAndSelect('task.project', 'project')
+      .leftJoinAndSelect('task.user', 'user')
+      .where('task.project_id = :projectId', { projectId: cleanProjectId })
+      .getMany();
 
     const formattedTasks = await this.formatTaskPayload(tasks);
 
-    // 3. Cache in Redis
+    // 3. Cache the result in Redis
     await CacheService.set(cacheKey, formattedTasks, CacheTTL.PROJECT_TASKS);
 
     return formattedTasks;
@@ -213,15 +271,12 @@ export class TasksService extends BaseService<Tasks> {
    * WRITE: Create task and invalidate parent project task list & stats
    */
   public async createTask(taskData: Partial<Tasks>): Promise<Tasks> {
-    // 1. Create and Save entity via Repository
     const taskEntity = this.repository.create(taskData);
     const savedTask = await this.repository.save(taskEntity);
 
-    // Extract project ID safely depending on your relation schema
     const projectId =
       (savedTask as any).project_id || (savedTask as any).project?.project_id;
 
-    // 2. Invalidate parent project's task list & stats cache keys
     if (projectId) {
       await CacheService.del(
         CacheKeys.projects.tasks(projectId),

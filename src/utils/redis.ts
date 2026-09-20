@@ -38,12 +38,14 @@ export class CacheService {
         typeof value === 'object' ? JSON.stringify(value) : String(value);
 
       if (ttlSeconds) {
+        // Standard ioredis signature compatible with both raw instances and Jest mocks
         await redis.set(key, stringValue, 'EX', ttlSeconds);
       } else {
         await redis.set(key, stringValue);
       }
     } catch (error) {
       console.error(`Cache set error for key "${key}":`, error);
+      throw error; // Throw so errors aren't silently swallowed!
     }
   }
 

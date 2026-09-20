@@ -12,6 +12,7 @@
     "start": "node dist/app.js",
     "test": "jest",
     "test:unit": "jest tests/unit",
+    "test:integration": "cross-env DOTENV_CONFIG_PATH=.env.test jest --config=jest.config.js --runInBand tests/integration",
     "test:unit:watch": "jest tests/unit --watch",
     "test:coverage": "jest --coverage"
   },
@@ -45,6 +46,7 @@
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.69.0",
     "@typescript-eslint/parser": "^8.69.0",
+    "cross-env": "^10.1.0",
     "eslint": "^10.9.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
