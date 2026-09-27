@@ -108,7 +108,7 @@ export const checkValidDate = (value: string | null | undefined): boolean => {
 };
 
 export const SERVER_CONST = {
-  JWTSECRET: 'SecretKeyOfPMS-SECRET',
+  JWTSECRET: process.env.JWT_SECRET || ' ',
   ACCESS_TOKEN_EXPIRY_TIME_SECONDS: 1 * 8 * 60 * 60, // 8 hours
   REFRESH_TOKEN_EXPIRY_TIME_SECONDS: 5 * 7 * 24 * 60 * 60, // 35 days
 } as const;

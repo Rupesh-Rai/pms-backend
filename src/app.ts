@@ -53,7 +53,8 @@ async function bootstrap() {
     QueueWorker.beginProcessing();
 
     // 6. Start Express Server
-    const server = new ExpressServer();
+    const serverInstance = new ExpressServer();
+    serverInstance.listen();
 
     // Graceful Shutdown Cleanup Handler
     const handleShutdown = async (signal: string) => {
@@ -73,7 +74,7 @@ async function bootstrap() {
           await dbInstance.destroy();
         }
 
-        server.closeServer();
+        serverInstance.closeServer();
         process.exit(0);
       } catch (err) {
         console.error('Error during graceful shutdown:', err);

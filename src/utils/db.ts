@@ -1,3 +1,4 @@
+// src/utils/db.ts
 import { DataSource, Repository, EntityTarget, ObjectLiteral } from 'typeorm';
 import { config, type IServerConfig } from '@/utils/config';
 import { Roles } from '@/components/roles/roles_entity';
@@ -16,9 +17,6 @@ export class DatabaseUtil {
 
   private constructor() {}
 
-  /**
-   * Returns the singleton instance of DatabaseUtil, safely waiting for pending connection handshakes.
-   */
   public static async getInstance(): Promise<DatabaseUtil> {
     if (!DatabaseUtil.instance) {
       DatabaseUtil.instance = new DatabaseUtil();
@@ -29,27 +27,28 @@ export class DatabaseUtil {
   }
 
   /**
-   * Checks if the underlying TypeORM DataSource connection is initialized.
+   * Exposes the underlying TypeORM DataSource instance.
    */
+  public get dataSource(): DataSource | null {
+    return DatabaseUtil.connection;
+  }
+
   public get isInitialized(): boolean {
     return DatabaseUtil.connection
       ? DatabaseUtil.connection.isInitialized
       : false;
   }
 
-  /**
-   * Establishes connection pool or locks execution if connection initialization is in progress.
-   */
   public async connectDatabase(): Promise<DataSource> {
     if (DatabaseUtil.connection && DatabaseUtil.connection.isInitialized) {
       return DatabaseUtil.connection;
     }
 
-    // Prevents concurrent caller races during app boot
     if (!DatabaseUtil.initPromise) {
       DatabaseUtil.initPromise = (async () => {
         try {
           const db_config = this.server_config.db_config;
+          const isTestEnv = process.env.NODE_ENV === 'test';
 
           const AppSource = new DataSource({
             type: 'postgres',
@@ -59,10 +58,11 @@ export class DatabaseUtil {
             password: db_config.password,
             database: db_config.dbname,
             entities: [Roles, Users, Projects, Tasks, Comments, Files],
-            synchronize: false, // Set to true only in development; false in production
+            // Synchronize automatically during test environment runs
+            synchronize: isTestEnv ? true : false,
             logging: false,
             extra: {
-              max: 10, // PostgreSQL connection pool size
+              max: 10,
               idleTimeoutMillis: 30000,
             },
           });
@@ -71,7 +71,7 @@ export class DatabaseUtil {
           console.log('Connected to the database with connection pool.');
           return DatabaseUtil.connection;
         } catch (error: any) {
-          DatabaseUtil.initPromise = null; // Clear lock on connection failure
+          DatabaseUtil.initPromise = null;
           console.error('Error connecting to the database:', error?.message);
           throw error;
         }
@@ -81,9 +81,6 @@ export class DatabaseUtil {
     return DatabaseUtil.initPromise;
   }
 
-  /**
-   * Gracefully shuts down the database connection pool on server stop.
-   */
   public async destroy(): Promise<void> {
     if (DatabaseUtil.connection && DatabaseUtil.connection.isInitialized) {
       await DatabaseUtil.connection.destroy();
@@ -94,9 +91,6 @@ export class DatabaseUtil {
     }
   }
 
-  /**
-   * Retrieves and caches the TypeORM repository for a specified entity.
-   */
   public getRepository<T extends ObjectLiteral>(
     entity: EntityTarget<T>
   ): Repository<T> {
